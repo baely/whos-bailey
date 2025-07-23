@@ -1,0 +1,8 @@
+pyproject.toml
+agent/__init__.py
+agent/agent.py
+whos_bailey.egg-info/PKG-INFO
+whos_bailey.egg-info/SOURCES.txt
+whos_bailey.egg-info/dependency_links.txt
+whos_bailey.egg-info/requires.txt
+whos_bailey.egg-info/top_level.txt
