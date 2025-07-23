@@ -1,0 +1,202 @@
+openapi: 3.0.3
+info:
+  title: Bailey's Caffeine Tracker API
+  description: API for tracking caffeine intake levels and events for baileyneeds.coffee
+  version: 1.0.0
+  contact:
+    name: Bailey Butler
+servers:
+  - url: https://baileyneeds.coffee
+    description: Production server
+  - url: https://caffeine-api.baileys.dev
+    description: API server
+  - url: https://caffeine.baileys.app
+    description: App server
+
+paths:
+  /api/levels:
+    get:
+      summary: Get caffeine levels over time
+      description: Returns calculated caffeine levels over a specified time range using half-life decay formula (4 hour half-life)
+      parameters:
+        - name: start
+          in: query
+          required: true
+          description: Start time in RFC3339 format
+          schema:
+            type: string
+            format: date-time
+          example: "2024-01-01T00:00:00Z"
+        - name: end
+          in: query
+          required: true
+          description: End time in RFC3339 format
+          schema:
+            type: string
+            format: date-time
+          example: "2024-01-01T23:59:59Z"
+      responses:
+        '200':
+          description: Array of caffeine level data points
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/LevelEvent'
+        '400':
+          description: Invalid time parameters
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "invalid start time"
+
+  /api/events:
+    get:
+      summary: Get caffeine events
+      description: Returns all caffeine intake events within a specified time range
+      parameters:
+        - name: start
+          in: query
+          required: true
+          description: Start time in RFC3339 format
+          schema:
+            type: string
+            format: date-time
+          example: "2024-01-01T00:00:00Z"
+        - name: end
+          in: query
+          required: true
+          description: End time in RFC3339 format
+          schema:
+            type: string
+            format: date-time
+          example: "2024-01-01T23:59:59Z"
+      responses:
+        '200':
+          description: Array of caffeine events
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CaffeineEvent'
+        '400':
+          description: Invalid time parameters
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "invalid start time"
+
+  /api/events/summary:
+    get:
+      summary: Get caffeine intake and cost summary
+      description: Returns total caffeine intake (mg) and cost (cents) for a time period. If no parameters provided, returns all-time totals.
+      parameters:
+        - name: start
+          in: query
+          required: false
+          description: Start time in RFC3339 format (optional)
+          schema:
+            type: string
+            format: date-time
+          example: "2024-01-01T00:00:00Z"
+        - name: end
+          in: query
+          required: false
+          description: End time in RFC3339 format (optional)
+          schema:
+            type: string
+            format: date-time
+          example: "2024-01-01T23:59:59Z"
+      responses:
+        '200':
+          description: Summary of caffeine intake and costs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventsSummary'
+        '400':
+          description: Invalid time parameters
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "invalid start time"
+
+components:
+  schemas:
+    LevelEvent:
+      type: object
+      properties:
+        timestamp:
+          type: integer
+          description: Unix timestamp
+          example: 1704067200
+        level:
+          type: number
+          format: float
+          description: Calculated caffeine level in mg
+          example: 125.5
+      required:
+        - timestamp
+        - level
+
+    CaffeineEvent:
+      type: object
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+          description: When the caffeine was consumed
+          example: "2024-01-01T08:30:00Z"
+        description:
+          type: string
+          description: Description of the caffeine source
+          example: "Homemade Double Oat Latte"
+        amount:
+          type: integer
+          description: Caffeine amount in milligrams
+          example: 160
+        cost:
+          type: integer
+          description: Cost in cents
+          example: 250
+      required:
+        - timestamp
+        - description
+        - amount
+        - cost
+
+    EventsSummary:
+      type: object
+      properties:
+        intake:
+          type: integer
+          description: Total caffeine intake in milligrams
+          example: 1600
+        cost:
+          type: integer
+          description: Total cost in cents
+          example: 2400
+      required:
+        - intake
+        - cost
+
+  examples:
+    PredefinedEventTypes:
+      summary: Predefined Coffee Types
+      description: |
+        Available predefined coffee events:
+        - Type 1: Homemade Double Oat Latte (160mg caffeine, 250 cents)
+        - Type 2: The Jolly Miller (80mg caffeine, 600 cents)
+
+tags:
+  - name: Levels
+    description: Caffeine level calculations and time-series data
+  - name: Events
+    description: Caffeine intake events and summaries
+  - name: Interface
+    description: Web interface and static assets
