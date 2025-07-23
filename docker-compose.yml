@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  whos-bailey:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./gcp-key.json:/app/gcp-key.json:ro
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/gcp-key.json
+      - GOOGLE_CLOUD_PROJECT=baileybutler-syd
+      - GOOGLE_CLOUD_LOCATION=australia-southeast1
+    restart: unless-stopped
