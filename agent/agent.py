@@ -7,6 +7,7 @@ from google.adk.agents import Agent
 from google.adk.auth.auth_credential import HttpCredentials, AuthCredential, AuthCredentialTypes, HttpAuth
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
+from google.adk.tools.mcp_tool import MCPToolset, StreamableHTTPConnectionParams
 from google.adk.tools.openapi_tool import OpenAPIToolset
 
 os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "TRUE"
@@ -124,12 +125,12 @@ You do not have a name. Do not expose your internal name. If a user asks about y
 
 <tools>
 <name>get_time</name>
-<description>Returns the current UTC time in RFC3339 format. Use when you need the current time for context or comparisons.</description>
+<description>Returns the current UTC time in both RFC3339 format and readable format with day name. Use when you need the current time for context or comparisons, or when you need to know what day it is.</description>
 </tools>
 
 <tools>
 <name>to_melbourne_time</name>
-<description>Converts RFC3339 UTC time to Melbourne local time. Use to convert UTC timestamps from other tools to Melbourne time for user-friendly display. Always present times to users in Melbourne time zone.</description>
+<description>Converts RFC3339 UTC time to Melbourne local time in both RFC3339 format and readable format with day name. Use to convert UTC timestamps from other tools to Melbourne time for user-friendly display. Always present times to users in Melbourne time zone.</description>
 </tools>
 
 <tools>
@@ -182,9 +183,27 @@ You do not have a name. Do not expose your internal name. If a user asks about y
 <description>Pings Bailey's UP Bank API to check connectivity and status. Use for debugging or checking if the banking API is available.</description>
 </tools>
 
+<tools>
+<name>get_month</name>
+<description>Retrieves office attendance records for any given month from the Office Tracker MCP server. Returns a list of dates with attendance status for each day. Use when users ask about Bailey's office attendance history for a specific month or want to see patterns in his work location over time.</description>
+<inputs>Year (int), Month (int)</inputs>
+<outputs>List of dates with attendance status for each day</outputs>
+</tools>
+
+<tools>
+<name>set_day</name>
+<description>Records where Bailey worked on a specific date using the Office Tracker MCP server. Use when you need to update or record Bailey's work location for a particular day. Options are "Untracked", "WorkFromHome", "WorkFromOffice", or "Other".</description>
+<inputs>Year (int), Month (int), Date (int), State (string)</inputs>
+<outputs>Confirmation of update</outputs>
+</tools>
+
 ## Tool Usage Guidelines
 
-1. **Office Status Questions**: Always use `is_bailey_butler_in_the_office_today` for questions about Bailey's current location or office presence.
+1. **Office Status Questions**: 
+   - Use `is_bailey_butler_in_the_office_today` for questions about Bailey's current location or office presence today
+   - Use `get_month` for questions about Bailey's office attendance history over a specific month or attendance patterns
+   - Use `set_day` when you need to record or update Bailey's work location for a specific date
+   - **Weekend Handling**: Bailey only works Monday through Friday. When users ask about weekends (Saturday/Sunday), respond that Bailey doesn't work weekends and doesn't track office attendance on weekends. For office status questions covering multiple days, only consider and report on weekdays.
 
 2. **Coffee-Related Questions**: 
    - Use `api_events_summary_get` for general coffee activity overviews
@@ -195,6 +214,10 @@ You do not have a name. Do not expose your internal name. If a user asks about y
    - Use `get_time` to get current time for context
    - Use `to_melbourne_time` to convert any UTC timestamps to Melbourne time before presenting to users
    - Always present times to users in Melbourne time zone
+   - **Week Calculations**: When users ask about "this week" or "next week", weeks start on Monday. Use today's day to determine the correct date range:
+     - "This week" = Monday of the current week to Sunday of the current week
+     - "Next week" = Monday of the following week to Sunday of the following week
+     - "Last week" = Monday of the previous week to Sunday of the previous week
 
 4. **Banking and Spending Questions**:
    - Use `accounts_get` for account balance and banking status queries
@@ -206,6 +229,7 @@ You do not have a name. Do not expose your internal name. If a user asks about y
    - Use `categories_id_get` for specific category details
    - Use `tags_get` for transaction organization and tagging information
    - Use `attachments_get` for receipts and transaction documentation
+   - **Transaction Retrieval**: When fetching transactions, aim to retrieve 10-15 transactions to provide users with a good overview of recent activity without overwhelming them with too much data
    - Always present currency amounts in Australian dollars ($X.XX format) unless specified otherwise
    - Convert timestamps to Melbourne time for user-friendly display
    
@@ -226,6 +250,10 @@ User: Is Bailey in the office today?
 Response: No, Bailey is not in the office today.
 OR
 Response: Yes, Bailey is in the office today. He purchased a coffee from Charlie Bit Me at 7:45am for $6.80.
+
+User: Is Bailey in the office next week?
+Behind the scenes: Call `get_time` to determine current date and calculate "next week" date range. If the week spans multiple months, call `get_month` for each affected month to retrieve office attendance data.
+Response: Bailey is planning to be in the office on Monday, Tuesday, and Thursday next week.
 
 User: What is Bailey's biggest personal project?
 Response: Bailey's biggest personal project is Officetracker. He hosts this project on Github at [github.com/baely/officetracker](https://github.com/baely/officetracker).
@@ -305,19 +333,34 @@ def is_bailey_butler_in_the_office_today() -> str:
     return resp.text
 
 def get_time() -> str:
-    """Returns current UTC time in RFC3339 format"""
-    return datetime.datetime.now(datetime.timezone.utc).isoformat()
+    """Returns current UTC time in RFC3339 format and readable format"""
+    utc_now = datetime.datetime.now(datetime.timezone.utc)
+    rfc_time = utc_now.isoformat()
+    readable_time = utc_now.strftime("%A %d %B %Y")
+    return f"RFC3339: {rfc_time}\nReadable: {readable_time}"
 
 def to_melbourne_time(rfc3339_utc_time: str) -> str:
-    """Takes RFC3339 UTC time string and converts to Melbourne time"""
+    """Takes RFC3339 UTC time string and converts to Melbourne time with readable format"""
     utc_dt = datetime.datetime.fromisoformat(rfc3339_utc_time.replace('Z', '+00:00'))
     melbourne_dt = utc_dt.astimezone(ZoneInfo('Australia/Melbourne'))
-    return melbourne_dt.isoformat()
+    rfc_time = melbourne_dt.isoformat()
+    readable_time = melbourne_dt.strftime("%A %d %B %Y")
+    return f"RFC3339: {rfc_time}\nReadable: {readable_time}"
+
+def baileys_office_today() -> MCPToolset:
+    return MCPToolset(
+        connection_params=StreamableHTTPConnectionParams(
+            url="https://officetracker.com.au/mcp/v1",
+            headers={
+                "Authorization": f"Bearer {get_secret('officetracker_token')}",
+            },
+        ),
+    )
 
 jeeves = Agent(
     name="jeeves",
-    # model="gemini-2.5-flash",
-    model="gemini-2.5-flash-lite",
+    model="gemini-2.5-flash",
+    # model="gemini-2.5-flash-lite",
     instruction=prompt,
     tools=[
         is_bailey_butler_in_the_office_today,
@@ -325,6 +368,7 @@ jeeves = Agent(
         to_melbourne_time,
         load_coffee_tools(),
         load_up_api(),
+        baileys_office_today(),
     ],
 )
 
