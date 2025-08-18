@@ -1,0 +1,27 @@
+name: Deploy AI
+on:
+  push:
+    branches:
+      - main
+jobs:
+  build:
+    name: Build Image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Build Image
+        run: |
+          docker build --tag registry.baileys.dev/ai:latest --push --platform linux/amd64 --file Dockerfile .
+
+  stage:
+    name: Stage AI
+    uses: baely/infra/.github/workflows/stage.yaml@main
+    needs:
+      - build
+    with:
+      repo: whos-bailey
+      ref: ${{ github.sha }}
+    secrets:
+      INFRA_APP_ID: ${{ secrets.INFRA_APP_ID }}
+      INFRA_APP_SECRET: ${{ secrets.INFRA_APP_SECRET }}
